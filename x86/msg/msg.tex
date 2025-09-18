@@ -1,0 +1,19 @@
+% \pdfminorversion=3
+\documentclass[margin=0cm]{standalone}
+\usepackage{graphicx}
+% \usepackage[T1]{fontenc}
+\usepackage{tikz}
+% \usepackage[x-302]{pdfx}
+% \usetikzlibrary{backgrounds,scopes}
+\usetikzlibrary{backgrounds}
+\begin{document}
+\centering
+\begin{tikzpicture}[
+  background rectangle/.style={draw=none},
+  inner frame sep=1mm,
+  framed
+  ]
+\node[inner sep=0] at (0,0) {\includegraphics[height=5cm]{build/msg.eps}};
+\node[draw,fill=white] at (0,0) {i386-unknown-linux};
+\end{tikzpicture}
+\end{document}

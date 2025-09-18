@@ -1,0 +1,48 @@
+% \pdfminorversion=3
+\documentclass{article}
+
+\pagestyle{empty}
+\usepackage{geometry}
+\geometry{
+  paperwidth=107mm,
+  paperheight=150mm,
+  layoutwidth=105mm,
+  layoutheight=148mm,
+  layouthoffset=1mm,
+  layoutvoffset=1mm,
+  margin=0mm
+}
+\usepackage{graphicx}
+
+\usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usetikzlibrary{backgrounds}
+\AtBeginDocument{\setlength{\parindent}{0mm}}
+\begin{document}
+\pdfpageattr{
+/TrimBox [2.834 2.834 300.472 422.362]
+}
+\vspace*{\fill}
+\begin{center}
+  \Huge
+  \textbf{\textsf{if}} $bored$ \textbf{\textsf{then}} \textsf{play}
+\end{center}
+\begin{center}
+  \begin{tikzpicture}[
+  ]
+    \node[inner sep=0] at (0,0) {\includegraphics[height=100mm]{./build/qr.eps}};
+  \end{tikzpicture}
+\end{center}
+\begin{center}
+  \Large
+  i386-unknown-linux
+\end{center}
+\vspace*{\fill}
+\pagebreak
+\begin{tikzpicture}
+    \draw[fill=none, draw=none] (0,0) to (10.5, -3);
+    \node[inner sep=0, anchor=north west] at (7.7,-0.3) {\includegraphics[width=25mm]{./chaos_post_logo.pdf}};
+    \draw(0.7, -1.27) to[line to] (7, -1.27);
+    \draw(0.7, -2.27) to[line to] (7, -2.27);
+  \end{tikzpicture}
+\end{document}
