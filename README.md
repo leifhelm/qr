@@ -4,10 +4,10 @@ A collection of QR codes which are executable.
 
 ## x86
 
+| Name                 | Description                             |
 |----------------------|-----------------------------------------|
 | [msg](x86/msg)       | A small QR code which prints a message. |
 | [sudoku](x86/sudoku) | A 40 level Sudoku in the terminal.      |
-|----------------------|-----------------------------------------|
 
 ## Scanning and running
 
