@@ -1,6 +1,6 @@
 # Executable QR codes
 
-A collection of QR codes which are executable.
+A collection of QR codes which are executable. The whole project was inspired by this [YouTube video](https://www.youtube.com/watch?v=ExwqNreocpg).
 
 ## x86
 
