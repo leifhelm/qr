@@ -1,3 +1,5 @@
 build/
 .direnv/
 .auctex-auto/
+*.core
+*.o

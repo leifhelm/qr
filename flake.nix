@@ -45,6 +45,7 @@
               ghostscript_headless
 
               qqwing
+              pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc
             ]
             ++ (with llvmPackages_18; [
               bintools
