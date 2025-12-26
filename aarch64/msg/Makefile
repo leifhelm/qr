@@ -30,7 +30,7 @@ build/$(EXE): build/$(EXE).O
 	$(OBJCOPY) -O binary --only-section=.text $< $@
 
 build/$(EXE).svg: build/$(EXE)
-	qrencode -8 -l M -t SVG -o $@ < $<
+	qrencode -8 -l M -t SVG --svg-path -o $@ < $<
 
 build/$(EXE).pdf: $(EXE).typ build/$(EXE).svg
 	typst compile $< $@
@@ -42,13 +42,14 @@ preview:
 	mkdir -p preview
 
 preview/light.svg: build/$(EXE) | preview
-	qrencode -8 -l M -t SVG --foreground=000000 --background=00000000 -o $@ < $<
+	qrencode -8 -l M -t SVG --svg-path --foreground=000000 --background=00000000 -o $@ < $<
 
 preview/dark.svg: build/$(EXE) | preview
-	qrencode -8 -l M -t SVG --foreground=E6E6E6 --background=00000000 -o $@ < $<
+	qrencode -8 -l M -t SVG --svg-path --foreground=E6E6E6 --background=00000000 -o $@ < $<
 
 .PHONY: clean
 clean:
 	rm -rf build
+	rm -rf preview
 
 # end

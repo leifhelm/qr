@@ -35,10 +35,10 @@ preview:
 	mkdir -p preview
 
 preview/light.svg: build/qr.min | preview
-	qrencode -8 -l L -t SVG --foreground=000000 --background=00000000 -o $@ < $<
+	qrencode -8 -l L -t SVG --svg-path --foreground=000000 --background=00000000 -o $@ < $<
 
 preview/dark.svg: build/qr.min | preview
-	qrencode -8 -l L -t SVG --foreground=E6E6E6 --background=00000000 -o $@ < $<
+	qrencode -8 -l L -t SVG --svg-path --foreground=E6E6E6 --background=00000000 -o $@ < $<
 
 %.sudoku:
 	qqwing --difficulty $* --generate 10 --one-line > $@
