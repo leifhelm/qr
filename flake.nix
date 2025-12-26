@@ -38,7 +38,6 @@
             buildInputs = [
               gdb
               nasm
-              elfuck
 
               qrencode
               texliveFull
@@ -52,7 +51,8 @@
               clang
               lld
             ])
-            ++ (with python3Packages; [ lxml ]);
+            ++ (with python3Packages; [ lxml ])
+            ++ lib.optionals (system == "x86_64-linux") [ elfuck ];
           };
       }
     );
