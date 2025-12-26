@@ -11,20 +11,21 @@ CC_FLAGS ?=
 LD ?= ld
 LD_FLAGS ?= --static --no-dynamic-linker 
 OBJCOPY ?= objcopy
+EXE = msg
 
 .PHONY: all
-all: build/msg
+all: build/$(EXE)
 
 build:
 	mkdir -p build
 
-build/msg.o: msg.S | build
+build/$(EXE).o: $(EXE).S | build
 	$(AS) $(AS_FLAGS) -o $@ $<
 
-build/msg.O: build/msg.o
-	$(LD) $(LD_FLAGS) -o $@ $<
+build/$(EXE).O: build/$(EXE).o $(EXE).ld
+	$(LD) $(LD_FLAGS) -T $(EXE).ld -o $@ $<
 
-build/msg: build/msg.O
+build/$(EXE): build/$(EXE).O
 	$(OBJCOPY) -O binary --only-section=.text $< $@
 
 

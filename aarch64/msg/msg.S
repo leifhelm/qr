@@ -1,6 +1,7 @@
 .include "../common/constants.S"
 
-.text
+
+.section .elf
 elf_start:  
     .byte 0x7f                 
     .ascii "ELF"                // magic
@@ -30,7 +31,7 @@ ph:
     .8byte bss_end-load_start       // size in memory
     .8byte 0x1                      // align
 
-    
+.section .text
 load_start:
 .global _start
 _start:
