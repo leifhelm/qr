@@ -6,4 +6,4 @@
  <img alt="QR Code" src="preview/light.svg">
 </picture>
 
-This QR code is an 32-bit x86 ELF executable which prints a short message.
+This QR code is an aarch64 ELF executable which prints a short message.

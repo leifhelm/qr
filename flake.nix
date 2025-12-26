@@ -42,6 +42,8 @@
               qrencode
               texliveFull
               ghostscript_headless
+              typst
+              tinymist
 
               qqwing
               pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc

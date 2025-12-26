@@ -12,7 +12,7 @@ if len(b) < len(a):
     b += [0x79] * (len(a) - len(b))
 
 obfuscated = [a ^ b for a, b in zip(a, b)]
-for i, v in enumerate(itertools.batched(obfuscated, n=4)):
+for v in itertools.batched(obfuscated, n=4):
     print(
-        f"    xor dword ptr [ecx + 0x{i*4:02x}], 0x{v[3]:02x}{v[2]:02x}{v[1]:02x}{v[0]:02x}"
+        f"    .4byte 0x{v[3]:02x}{v[2]:02x}{v[1]:02x}{v[0]:02x}"
     )
