@@ -47,13 +47,18 @@
 
               qqwing
               pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc
+              (pkgs.python3.withPackages (
+                python-pkgs: with python-pkgs; [
+                  lxml
+                  segno
+                ]
+              ))
             ]
             ++ (with llvmPackages_18; [
               bintools
               clang
               lld
             ])
-            ++ (with python3Packages; [ lxml ])
             ++ lib.optionals (system == "x86_64-linux") [ elfuck ];
           };
       }
