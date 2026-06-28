@@ -17,12 +17,11 @@ def codes(bit_lengths):
 
 literal_length_bit_lengths = [0] * 286
 literal_length_bit_lengths[0x00] = 1
-literal_length_bit_lengths[0x02] = 6
 literal_length_bit_lengths[0xFF] = 2
-literal_length_bit_lengths[256] = 7  # End of block
+literal_length_bit_lengths[256] = 6  # End of block
+literal_length_bit_lengths[265] = 4  # Length 11-12
 literal_length_bit_lengths[278] = 5  # Length 83-98
-literal_length_bit_lengths[281] = 7  # Length 131-162
-literal_length_bit_lengths[282] = 4  # Length 163-194
+literal_length_bit_lengths[282] = 6  # Length 163-194
 literal_length_bit_lengths[285] = 3
 
 literal_length_codes = codes(literal_length_bit_lengths)
@@ -289,7 +288,7 @@ def encode_symbols(bs, symbols):
 
 
 symbols = (
-    [0x00, 0xFF, (184, 1), 0x02, 0x00, (184, 1)] + [(258, 186)] * 21 + [(162, 186)]
+    [0x00, 0xFF, (184, 1)] + [(258, 186)] * 22 + [(90, 186)]
 )
 
 encode_symbols(bitstream, symbols)
@@ -302,7 +301,7 @@ print("scanline_start:")
 line_start.print_asm()
 
 line_end = BitStream()
-encode_symbols(line_end, [0xFF] * 4 + [(186, 372)] + [(258, 186)] * 4 + [(84, 186)])
+encode_symbols(line_end, [0xFF] * 4 + [(258, 186)] * 5 + [(12, 186)])
 print("png_scanline_end:")
 line_end.print_asm()
 print(f"    png_scanline_end_bit_len = {line_end.bit_length()}")
@@ -310,25 +309,24 @@ print(f"    png_scanline_end_bit_len = {line_end.bit_length()}")
 quiet_end = BitStream()
 encode_symbols(
     quiet_end,
-    [0x00, 0xFF, (184, 1), (186, 372)] + [(258, 186)] * 21 + [(162, 186), 256],
+    [0x00, 0xFF, (184, 1)] + [(258, 186)] * 22 + [(90, 186), 256]
 )
 print("png_quiet_end:")
 quiet_end.print_asm()
 print(f"    png_quiet_end_bit_len = {quiet_end.bit_length()}")
 
 
-copy_lines = BitStream()
-encode_symbols(copy_lines, [(186, 372)] + [(258, 186)] * 4 + [(84, 186)])
-print("copy_scanline:")
-copy_lines.print_asm()
+# copy_lines = BitStream()
+# encode_symbols(copy_lines, [(186, 372)] + [(258, 186)] * 4 + [(84, 186)])
+# print("copy_scanline:")
+# copy_lines.print_asm()
 
 
 zbytes = bytearray(b"\x78\x01")
 zbytes += bitstream.b
 
 original_data = bytearray()
-original_data += b"\x00" + b"\xff" * 185
-original_data += (b"\x02" + b"\x00" * 185) * 31
+original_data += (b"\x00" + b"\xff" * 185) * 32
 # original_data += b"\x00" + b"\xff" * 4 + b"\x00\xff" * 88 + b"\x00" + b"\xff" * 4
 # original_data += (b"\x02" + b"\x00" * 185) * 7
 
@@ -377,11 +375,11 @@ qrcode.make()
 qrcode.print_ascii()
 
 for y in range(177):
-    original_data += b"\x00" + b"\xff" * 4
-    for x in range(177):
-        original_data += b"\x00" if qrcode.modules[y][x] else b"\xff"
-    original_data += b"\xff" * 4
-    original_data += (b"\x02" + b"\x00" * 185) * 7
+    for i in range(8):
+        original_data += b"\x00" + b"\xff" * 4
+        for x in range(177):
+            original_data += b"\x00" if qrcode.modules[y][x] else b"\xff"
+        original_data += b"\xff" * 4
 
 print(f"0x1740 {zlib.adler32(original_data[:0x1740]):08x}")
 print(original_data[0x1740 : 0x1740 + 186].hex())
