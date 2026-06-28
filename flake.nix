@@ -28,6 +28,31 @@
             '';
           }
         ) { };
+        python = pkgs.python3.override {
+          self = python;
+          packageOverrides = pyfinal: pyprev: {
+            pydeflate = pyfinal.callPackage (
+              {
+                stdenv,
+                fetchFromGitHub,
+                buildPythonPackage,
+                setuptools,
+              }:
+              buildPythonPackage {
+                pname = "pydeflate";
+                version = "0.1.0-e0061df";
+                src = fetchFromGitHub {
+                  owner = "Nowam";
+                  repo = "pydeflate";
+                  rev = "e0061df5790a2cdd4b424cccc1033104272e3a02";
+                  hash = "sha256-BQu/YkNVnqOlRcKbVVjnWM64Xk57I0x3cV9LPCCJk1o=";
+                };
+                pyproject = true;
+                build-system = [ setuptools ];
+              }
+            ) { };
+          };
+        };
         x86_64-linux = import nixpkgs {
           crossSystem = {
             config = "x86_64-unknown-linux-gnu";
@@ -62,9 +87,12 @@
               pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc
               i686-linux.pkgsBuildTarget.binutils
               x86_64-linux.pkgsBuildTarget.binutils
+              (python.withPackages (
                 python-pkgs: with python-pkgs; [
                   lxml
                   segno
+                  pydeflate
+                  qrcode
                 ]
               ))
             ]
