@@ -28,6 +28,18 @@
             '';
           }
         ) { };
+        x86_64-linux = import nixpkgs {
+          crossSystem = {
+            config = "x86_64-unknown-linux-gnu";
+          };
+          inherit system;
+        };
+        i686-linux = import nixpkgs {
+          crossSystem = {
+            config = "i686-unknown-linux-gnu";
+          };
+          inherit system;
+        };
       in
       {
         devShells.default =
@@ -38,6 +50,7 @@
             buildInputs = [
               gdb
               nasm
+              gnumake
 
               qrencode
               texliveFull
@@ -47,7 +60,8 @@
 
               qqwing
               pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc
-              (pkgs.python3.withPackages (
+              i686-linux.pkgsBuildTarget.binutils
+              x86_64-linux.pkgsBuildTarget.binutils
                 python-pkgs: with python-pkgs; [
                   lxml
                   segno
