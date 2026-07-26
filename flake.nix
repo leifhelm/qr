@@ -1,11 +1,13 @@
 {
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
+  inputs.packer.url = "github:leifhelm/packer";
   outputs =
     {
       self,
       nixpkgs,
       flake-utils,
+      packer,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -87,6 +89,9 @@
               pkgsCross.aarch64-multiplatform.pkgsBuildTarget.gcc
               i686-linux.pkgsBuildTarget.binutils
               x86_64-linux.pkgsBuildTarget.binutils
+
+              packer.packages.${system}.default
+
               (python.withPackages (
                 python-pkgs: with python-pkgs; [
                   lxml

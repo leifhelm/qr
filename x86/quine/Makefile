@@ -24,11 +24,8 @@ build/qr.o: qr.S bitmap.S | build
 build/qr: build/qr.o
 	$(LD) $(LD_FLAGS) -o $@ $<
 
-# build/qr: build/qr.O
-# 	$(OBJCOPY) -O binary --only-section=.text $< $@
-
 build/qr.min: build/qr
-	elfuck -b $< $@
+	packer --pad-text=realleif $< $@
 
 preview:
 	mkdir -p preview
