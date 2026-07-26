@@ -15,12 +15,56 @@ sizeof_block:
 .global _start
 _start:
     # esi points to the first byte after the elf file, by the design of the elf decompressor
-    mov $test_msg, %edi
-    mov $test_msg_end, %esi
-    //mov $0x7f000, %edi
+    mov (%esp), %edi            # edi = argc
+    mov $1, %edx                # i = 1
+    lea (%esp, %edx, 4), %ecx   # ecx = argv
+//    push %esi                   # save esi
+args_loop:
+    cmp %edi, %edx
+    jae args_complete
+    mov (%ecx, %edx, 4), %ebx   # string 2 = argv[i]
+    mov $flag_help, %eax
+    call str_cmp
+    test %eax, %eax
+    jnz print_help              # argv[i] == flag_help
+    mov $flag_png, %eax
+    call str_cmp
+    test %eax, %eax
+    jz args_after_png           # argv[i] != flag_png
+    movb $1, output_type        # output_type = 1
+    jmp args_inc
+args_after_png:
+    mov %ebx, file              # file = argv[i]
+args_inc:
+    inc %edx
+    jmp args_loop
+args_complete:
+    cmpl $0, file
+    je encode_self
+    mov $SYS_open, %eax
+    mov file, %ebx
+    mov $O_RDONLY, %ecx
+    int $0x80                   # fd = open(file, O_RDONLY)
+    test %eax, %eax
+    js print_cannot_open_file   # fd < 0
+
+    mov %eax, %ebx
+    mov $SYS_read, %eax
+    mov $input, %ecx
+    mov $2953, %edx
+    int $0x80                   # read(fd, data, 2953)
+    test %eax, %eax
+    jle print_cannot_read_file  # ret <= 0
+debug:
+    mov %ecx, %edi              # data
+    lea (%ecx, %eax), %esi      # data end = data + length
+    jmp encode_qr_code
+encode_self:
+    mov $0x7f000, %edi
+
+    # edi: data, esi: data end
+encode_qr_code:
     mov $bitstream, %edx
-
-
 write_mode_and_character_count:
     mov %esi, %eax
     sub %edi, %eax
@@ -222,7 +266,8 @@ mask_inc:
     cmp $177, %edi
     jne mask_y
 
-    jmp png
+    cmpb $0, output_type
+    jne png
 
     # esi: x, edi: y
 print:
@@ -244,25 +289,25 @@ print_white:
     mov $white, %ecx
     mov $white_len, %edx
 print_write:
-    call write
+    call write_stdout
     inc %esi
     cmp $177, %esi
     jne print_x
     mov $new_line, %ecx
     mov $new_line_len, %edx
-    call write
+    call write_stdout
     inc %edi
     cmp $177, %edi
     jne print_y
     call print_quiet
-    jmp exit
+    jmp exit0
 
 png:
     mov %esp, %ebp
     sub $16, %esp
     mov $png_header, %ecx
     mov $png_header_len, %edx
-    call write
+    call write_stdout
 
     mov $png_idat, %esi
     mov $chunk_header+4, %edi
@@ -402,7 +447,7 @@ png_write_idat_chunk_crc:
     mov %edi, %edx
     sub $chunk_header-4, %edx
     mov $chunk_header, %ecx
-    call write              # write idat chunk
+    call write_stdout       # write idat chunk
 
 
 
@@ -410,12 +455,14 @@ png_write_idat_chunk_crc:
 png_write_iend:
     mov $png_iend, %ecx
     mov $png_iend_len, %edx
-    call write
+    call write_stdout
 
 
+exit0:
+    xor %ebx, %ebx          # exit(0)
+    # ebx: exit code
 exit:
     mov $SYS_exit, %eax
-    xor %ebx, %ebx
     int $0x80
 
     # input:
@@ -595,15 +642,65 @@ print_quiet:
     mov $new_line_len, %edx
     mov $4, %esi
 print_quiet_loop:
-    call write
+    call write_stdout
     dec %esi
     jnz print_quiet_loop
     ret
 
+print_cannot_open_file:
+    mov $cannot_open_file, %ecx
+    mov $cannot_open_file_len, %edx
+    call write_stderr       # write to stderr
+    mov $1, %ebx
+    jmp exit                # exit(1)
+
+print_cannot_read_file:
+    mov $cannot_read_file, %ecx
+    mov $cannot_read_file_len, %edx
+    call write_stderr       # write to stderr
+    mov $1, %ebx
+    jmp exit                # exit(1)
+
+print_help:
+    mov $help, %ecx
+    mov $help_len, %edx
+    call write_stdout
+    jmp exit0
+
+    # eax: string 1, ebx: string 2
+    # eax: return value
+str_cmp:
+    # ecx: i
+    push %ecx
+    push %edx
+    xor %ecx, %ecx          # i = 0
+str_cmp_loop:
+    mov (%eax, %ecx), %dl   # dl = string 1[i]
+    cmp (%ebx, %ecx), %dl
+    jne str_cmp_ret0        # dl != string 2[i]
+    inc %ecx                # i++
+    test %dl, %dl
+    jnz str_cmp_loop        # dl != 0
+    mov $1, %eax
+    pop %edx
+    pop %ecx
+    ret                     # return 1
+str_cmp_ret0:
+    xor %eax, %eax
+    pop %edx
+    pop %ecx
+    ret                     # return 0
+
     # ecx: data, edx: data length
+write_stderr:
+    mov $STDERR_FILENO, %ebx
+    jmp write
+
+    # ecx: data, edx: data length
+write_stdout:
+    mov $STDOUT_FILENO, %ebx
 write:
     mov $SYS_write, %eax
-    mov $STDOUT_FILENO, %ebx
     int $0x80
     ret
 
@@ -619,9 +716,28 @@ new_line:
     .ascii "\n        "
     .equ new_line_len, . - new_line
 
-test_msg:
-    .ascii "Hello World"
-test_msg_end:
+help:
+    .ascii "Usage: ./qr [OPTIONS] [FILE]\n"
+    .ascii "Encode FILE as an QR Code.\n"
+    .ascii "\n"
+    .ascii "Without FILE the program encodes itself.\n"
+    .ascii "Output is always standard output.\n"
+    .ascii "\n"
+    .ascii "      --png   Output QR Code as PNG image\n"
+    .ascii "      --help  Display help and exit\n"
+    help_len = . - help
+
+cannot_open_file:
+    .ascii "Cannot open file.\n"
+    cannot_open_file_len = . - cannot_open_file
+cannot_read_file:
+    .ascii "Cannot read file.\n"
+    cannot_read_file_len = . - cannot_read_file
+
+flag_help:
+    .asciz "--help"
+flag_png:
+    .asciz "--png"
 
 png_header:
     .byte 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A    # magic
@@ -667,9 +783,12 @@ alpha:
     .skip 256
 aindex:
     .skip 256
+
+    .align 4
 crc_table:
     .skip 256 * 4
 
+    .align 4
 blocks:
     .skip sizeof_block * (19+6)
 blocks_end:
@@ -678,11 +797,17 @@ bitstream:
     .skip 2956
 bitstream_end:
 
+file:
+    .skip 4
+output_type:
+    .skip 1
 
+input:
 codewords:
     .skip 3706
 codewords_end:
 
+    .align 4
 chunk_header:
     .skip 8
 chunk_data:
