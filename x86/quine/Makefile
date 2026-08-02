@@ -18,7 +18,7 @@ all: preview/light.svg preview/dark.svg
 build:
 	mkdir -p build
 
-build/qr.o: qr.S bitmap.S | build
+build/qr.o: qr.S | build
 	$(AS) $(AS_FLAGS) -o $@ $<
 
 build/qr: build/qr.o

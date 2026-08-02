@@ -55,7 +55,6 @@ args_complete:
     int $0x80                   # read(fd, data, 2953)
     test %eax, %eax
     jle print_cannot_read_file  # ret <= 0
-debug:
     mov %ecx, %edi              # data
     lea (%ecx, %eax), %esi      # data end = data + length
     jmp encode_qr_code
@@ -176,6 +175,76 @@ place_codewords_ecc_inner:
     cmp $30, %edi           # j < 30
     jne place_codewords_ecc_outer
 
+    # eax: i
+    # edx: v
+write_timing:
+    xor %eax, %eax      # i = 0
+write_timing_loop:
+    lea 1(%eax), %edx   # v = i+1
+    and $1, %edx        # v &= 1
+    or $-0x80, %edx     # v = 0x80 | ((i+1)&1)
+    mov %dl, bitmap+177*6(%eax) # bitmap[177*6+i] = v
+    imul $177, %eax, %ecx
+    mov %dl, bitmap+6(%ecx)     # bitmpa[177*i+6] = v
+    inc %eax            # i++
+    cmp $177, %eax
+    jne write_timing_loop   # i != 177
+
+write_finder_pattern:
+    mov $7, %ecx        # size = 8
+    mov $finder_pattern, %edx   # pattern = finder_pattern
+    xor %eax, %eax      # seperator offset = 0
+    xor %ebx, %ebx      # finder offset = 0
+    call write_seperator
+    call write_pattern
+    mov $177-8, %eax    # seperator offset = 177-8
+    lea 1(%eax), %ebx   # finder offset = 177-7
+    call write_seperator
+    call write_pattern
+    mov $177*(177-8), %eax  # seperator offset = 177*(177-8)
+    lea 177(%eax), %ebx # finder offset = 177*(177-7)
+    call write_seperator
+    call write_pattern
+
+    # eax: end
+    # ecx: d
+    # edx: second position
+    # esi: x
+    # edi: y
+write_alignment_pattern:
+    mov $28, %edx       # second position = 28
+    mov $28, %ecx       # d = 28
+    mov $28+28*5, %eax  # end = second position + d*5
+    mov %edx, %esi      # x = second position
+    mov $4, %edi        # y = 4
+write_alignment_pattern_loop:
+    call write_one_alignment_pattern
+    xchg %esi, %edi     # exchange x and y
+    call write_one_alignment_pattern
+    xchg %esi, %edi     # switch x and y back
+    add %ecx, %esi      # x += d
+    cmp %eax, %esi
+    jne write_alignment_pattern_loop    # x != end
+    add %ecx, %eax      # end += d
+    mov %edx, %edi      # y = second position
+write_alignment_pattern_y:
+    mov %edx, %esi      # x = second position
+write_alignment_pattern_x:
+    call write_one_alignment_pattern
+    add %ecx, %esi      # x += d
+    cmp %eax, %esi
+    jne write_alignment_pattern_x   # x != end
+    add %ecx, %edi      # y += d
+    cmp %eax, %edi
+    jne write_alignment_pattern_y   # y != end
+
+add_placeholders:
+    xor %esi, %esi
+    call write_format_info  # write_format_info(0)
+    movb $0x80, bitmap+177*(177-8)+8    # placeholder at dark module
+    xor %ebx, %ebx
+    call write_version_info # write_version_info(0)
+
 fill:
     # ecx: current_bitmap*, esi: x, edi: y
     # edx: status
@@ -266,8 +335,16 @@ mask_inc:
     cmp $177, %edi
     jne mask_y
 
+add_format_info:
+    mov $0x77c4, %esi
+    call write_format_info
+    movb $0x81, bitmap+177*(177-8)+8    # place dark module
+add_version_info:
+    mov $0x28c69, %ebx
+    call write_version_info
+
     cmpb $0, output_type
-    jne png
+    jne png             # output_type != 0
 
     # esi: x, edi: y
 print:
@@ -536,6 +613,163 @@ ecc_encode_inc:
     jnz init_blocks_loop
     ret
 
+    # Input:
+    # ebx: offset
+    # ecx: size
+    # edx: pattern
+    # Local:
+    # esi: x
+    # edi: y
+write_pattern:
+    push %edx
+    xor %edi, %edi      # y = 0
+write_pattern_y:
+    xor %esi, %esi      # x = 0
+write_pattern_x:
+    mov (%edx, %esi), %al   # al = pattern[x]
+    mov %al, bitmap(%ebx, %esi) # bitmap[offset+x] = al
+    inc %esi            # x++
+    cmp %ecx, %esi
+    jne write_pattern_x # x != size
+    add %ecx, %edx      # pattern += size
+    add $177, %ebx      # offset += 177
+    inc %edi            # y++
+    cmp %ecx, %edi
+    jne write_pattern_y # y != size
+    pop %edx
+    ret
+
+    # Input:
+    # eax: offset
+    # Local:
+    # esi: end
+    # edi: i
+write_seperator:
+    lea 177*8(%eax), %esi   # end = offset + 177*8
+write_seperator_y:
+    xor %edi, %edi      # i = 0
+write_seperator_x:
+    movb $-0x80, bitmap(%eax, %edi) # bitmap[offset+i] = 0x80
+    inc %edi            # i++
+    cmp $8, %edi
+    jne write_seperator_x   # i != 8
+    add $177, %eax      # offset += 177
+    cmp %eax, %esi
+    jne write_seperator_y
+    ret
+
+    # Input:
+    # esi: x
+    # edi: y
+    # Local:
+    # ebx: offset
+    # ecx: size
+    # edx: pattern
+write_one_alignment_pattern:
+    push %esi
+    push %edi
+    push %ecx
+    push %edx
+    push %eax
+    mov $5, %ecx        # size = 5
+    mov $alignment_pattern, %edx    # pattern = alignment_pattern
+    imul $177, %edi, %ebx   # offset = 177*y
+    add %esi, %ebx      # offset += x
+    call write_pattern
+    pop %eax
+    pop %edx
+    pop %ecx
+    pop %edi
+    pop %esi
+    ret
+
+    # Input:
+    # esi: format
+    # Local:
+    # eax: i
+    # ecx: bitmap
+    # edx: v
+    # esi: format
+write_format_info:
+    xor %eax, %eax      # i = 0
+    mov $bitmap, %ecx   # ecx = bitmap
+write_format_info_loop:
+    mov %esi, %edx      # v = format
+    and $1, %edx        # v &= 1
+    add $-0x80, %edx    # v += 0x80
+    cmp $7, %eax
+    ja write_format_info_above_7    # i > 7
+    mov $177*8+177-1, %edi
+    sub %eax, %edi      # edi -= i
+    mov %dl, (%ecx, %edi)   # bitmap[177*8+177-1-i] = v
+    lea 1(%eax), %edi   # edi = i + 1
+    cmp $5, %eax
+    cmovbe %eax, %edi   # edi = i <= 5 ? i : i+1
+    imul $177, %edi, %edi   # edi *= 177
+    add $8, %edi        # edi += 8
+    jmp write_format_info_inc
+write_format_info_above_7:
+    imul $177, %eax, %edi   # edi = i * 177
+    mov %dl, 177*(177-15)+8(%ecx, %edi) # bitmap[177*(177-15+i)+8] = v
+    mov $177*8+14, %edi
+    sub %eax, %edi      # edi = 177*8+14-i
+    mov $177*8+7, %ebx
+    cmp $8, %eax
+    cmove %ebx, %edi
+write_format_info_inc:
+    mov %dl, (%ecx, %edi)   # bitmap[edi] = v
+    inc %eax            # i++
+    shrl %esi           # format >>= 1
+    cmp $15, %eax
+    jne write_format_info_loop
+    ret
+
+    # Input:
+    # ebx: version
+    # Local:
+    # eax: p
+    # ecx: v
+    # edx: temp
+    # esi: x
+    # edi: y
+write_version_info:
+    mov %ebx, %ecx      # v = version
+    xor %esi, %esi      # x = 0
+write_version_info_1_x:
+    xor %edi, %edi      # y = 0
+    lea bitmap+177*(177-11)(%esi), %eax # p = bitmap + 177*(177-11) + x
+write_version_info_1_y:
+    mov %ecx, %edx      # edx = v
+    and $1, %edx        # edx &= 1
+    or $-0x80, %edx     # dl = 0x80 | (v&1)
+    mov %dl, (%eax)     # *p = 0x80 | (v&1)
+    shrl %ecx           # v >>= 1
+    inc %edi            # y++
+    add $177, %eax      # p += 177
+    cmp $3, %edi
+    jne write_version_info_1_y  # y != 3
+    inc %esi            # x++
+    cmp $6, %esi
+    jne write_version_info_1_x  # x != 6
+
+    mov $bitmap+177-11, %eax    # p = bitmap + 177-11
+    xor %edi, %edi      # y = 0
+write_version_info_2_y:
+    xor %esi, %esi      # x = 0
+write_version_info_2_x:
+    mov %ebx, %edx      # edx = version
+    and $1, %edx        # edx &= 1
+    or $-0x80, %edx     # dl = 0x80 | (v&1)
+    mov %dl, (%eax, %esi)   # p[x] = 0x80 | (v&1)
+    shrl %ebx           # version >>= 1
+    inc %esi            # x++
+    cmp $3, %esi
+    jne write_version_info_2_x  # x != 3
+    add $177, %eax      # p += 177
+    inc %edi            # y++
+    cmp $6, %edi
+    jne write_version_info_2_y  # y != 6
+    ret
 
     # eax: bits, edx: number of bits
     # -4(ebp): byte ptr
@@ -772,8 +1006,21 @@ png_quiet_end:
     .byte 0xfa,0x6b,0x93,0x4f,0x3e,0xf9,0xe4,0x93,0x4f,0x3e,0xf9,0xe4,0x93,0x4f,0x3e,0xf9,0xe4,0x93,0x4f,0x3e,0xf9,0xe4,0x93,0x4f,0x3e,0xf9,0xe4,0x93,0x4f,0xfe,0x4e,0xfe,0x01 # bit position = 2, bit length = 258
     png_quiet_end_bit_len = 258
 
-bitmap:
-    .include "bitmap.S"
+finder_pattern:
+    .byte 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81
+    .byte 0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x81
+    .byte 0x81, 0x80, 0x81, 0x81, 0x81, 0x80, 0x81
+    .byte 0x81, 0x80, 0x81, 0x81, 0x81, 0x80, 0x81
+    .byte 0x81, 0x80, 0x81, 0x81, 0x81, 0x80, 0x81
+    .byte 0x81, 0x80, 0x80, 0x80, 0x80, 0x80, 0x81
+    .byte 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81
+
+alignment_pattern:
+    .byte 0x81, 0x81, 0x81, 0x81, 0x81
+    .byte 0x81, 0x80, 0x80, 0x80, 0x81
+    .byte 0x81, 0x80, 0x81, 0x80, 0x81
+    .byte 0x81, 0x80, 0x80, 0x80, 0x81
+    .byte 0x81, 0x81, 0x81, 0x81, 0x81
 
 generator:
     .byte 0xb4,0xc0,0x28,0xee,0xd8,0xfb,0x25,0x9c,0x82,0xe0,0xc1,0xe2,0xad,0x2a,0x7d,0xde,0x60,0xef,0x56,0x6e,0x30,0x32,0xb6,0xb3,0x1f,0xd8,0x98,0x91,0xad,0x29
@@ -788,10 +1035,19 @@ aindex:
 crc_table:
     .skip 256 * 4
 
+bitmap:
+    .skip 177*177
+
     .align 4
 blocks:
     .skip sizeof_block * (19+6)
 blocks_end:
+
+    .align 4
+run_length_len:
+    .skip 4
+run_length:
+    .skip 178
 
 bitstream:
     .skip 2956
