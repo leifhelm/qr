@@ -20,10 +20,20 @@ adler32_a:
     .skip 4
 adler32_b:
     .skip 4
+best_score:
+    .skip 4
+apply_mask_p:
+    .skip 4
+apply_mask_i_plus_j:
+    .skip 4
 # Byte aligned variables
 output_type:
     .skip 1
 bit_position:
+    .skip 1
+mask:
+    .skip 1
+best_mask:
     .skip 1
     .align 4
 sizeof_scratch:
@@ -210,7 +220,7 @@ write_timing_loop:
     jne write_timing_loop   # i != 177
 
 write_finder_pattern:
-    mov $7, %ecx        # size = 8
+    mov $7, %ecx        # size = 7
     mov $finder_pattern, %edx   # pattern = finder_pattern
     xor %eax, %eax      # seperator offset = 0
     xor %ebx, %ebx      # finder offset = 0
@@ -328,34 +338,123 @@ fill_update_cur:
     cmpl $codewords_end, -16(%esp)
     jne fill_next_codeword  # codewords != codewords_end
 
+select_mask:
+    movl $0xffffffff, best_score(%ebp)  # best_score = INT_MAX
+select_mask_loop:
+    call apply_mask
 
+    # ebx: score
+score_mask:
+    xor %ebx, %ebx      # score = 0
 
-mask:
-    # esi: x, edi: y
-    mov $bitmap, %edx
-    xor %edi, %edi
-mask_y:
-    xor %esi, %esi
-mask_x:
-    mov (%edx), %cl
-    test %cl, %cl
-    js mask_inc
-    lea (%esi,%edi), %eax
-    and $1, %eax
-    not %eax
-    xor %eax, %ecx
-    mov %cl, (%edx)
-mask_inc:
-    inc %edx
-    inc %esi
-    cmp $177, %esi
-    jne mask_x
+    # edi: i
+score_n1n3:
+    xor %edi, %edi      # i = 0
+score_n1n3_loop:
+    mov $1, %eax        # stride = 1
+    imul $177, %edi, %ecx
+    add $bitmap, %ecx   # bitmap = bitmap + i * 177
+    call compute_run_length
+    call compute_n1n3
+    mov $177, %eax      # stride = 177
+    lea bitmap(%edi), %ecx  # bitmap = bitmap + i
+    call compute_run_length
+    call compute_n1n3
+
     inc %edi
     cmp $177, %edi
-    jne mask_y
+    jne score_n1n3_loop
+
+    # edx: *bitmap
+    # esi: x
+    # edi: y
+    # al: light
+    # cl: dark
+score_n2:
+    xor %edi, %edi  # y = 0
+score_n2_y:
+    xor %esi, %esi  # x = 0
+score_n2_x:
+    imul $177, %edi, %edx
+    lea bitmap(%esi, %edx), %edx    # bitmap = bitmap + x + 177 * y
+
+    mov (%edx), %al
+    or 1(%edx), %al
+    or 177(%edx), %al
+    or 178(%edx), %al
+    not %eax        # light = (bitmap[0] | bitmap[1] | bitmap[177] | bitmap[178]) ^ 0xff
+    mov (%edx), %cl
+    and 1(%edx), %cl
+    and 177(%edx), %cl
+    and 178(%edx), %cl  # dark = (bitmap[0] & bitmap[1] & bitmap[177] & bitmap[178])
+    or %al, %cl
+    and $1, %ecx    # ecx = (light | dark) & 1
+    lea (%ecx, %ecx, 2), %ecx   # ecx *= 3
+    add %ecx, %ebx  # score += 3 * ((light | dark) & 1)
+
+    inc %esi
+    cmp $176, %esi
+    jne score_n2_x  # x != 176
+    inc %edi
+    cmp $176, %edi
+    jne score_n2_y  # y != 176
+
+    # esi: x
+    # edi: y
+    # eax: darks
+score_n4:
+    xor %eax, %eax  # darks = 0
+    xor %edi, %edi  # y = 0
+score_n4_y:
+    xor %esi, %esi  # x = 0
+score_n4_x:
+    imul $177, %edi, %edx
+    lea bitmap(%esi, %edx), %edx    # bitmap = bitmap + x + 177 * y
+
+    mov (%edx), %cl
+    and $1, %ecx
+    add %ecx, %eax  # darks += *bitmap & 1
+
+    inc %esi
+    cmp $177, %esi
+    jne score_n4_x  # x != 177
+    inc %edi
+    cmp $177, %edi
+    jne score_n4_y  # y != 177
+
+    imul $200, %eax, %eax # eax = 200 * darks
+    add $177*177, %eax # eax = 200 * darks + 177 * 177
+    mov $177*177*2, %ecx    # ecx = 177 * 177 * 2
+    xor %edx, %edx  # edx = 0
+    div %ecx        # eax = (200 * darks + 177 * 177) / (177 * 2)
+    sub $50, %eax   # eax -= 50
+    mov %eax, %edx
+    neg %edx
+    cmovns %edx, %eax   # eax = abs(eax)
+    cdq             # sign extend eax to edx:eax
+    mov $5, %ecx
+    idiv %ecx       # eax = eax / 5
+    imull $10, %eax, %eax   # eax *= 10
+    add %eax, %ebx  # score += eax
+    cmp %ebx, best_score(%ebp)
+    jbe select_mask_inc # best score <= score
+
+    mov %ebx, best_score(%ebp)  # best score = score
+    mov mask(%ebp), %al
+    mov %al, best_mask(%ebp)    # best mask = mask
+select_mask_inc:
+    call apply_mask # revert mask
+    incb mask(%ebp) # mask++
+    cmpb $8, mask(%ebp)
+    jne select_mask_loop    # mask != 8
+
+    mov best_mask(%ebp), %al
+    mov %al, mask(%ebp) # mask = best mask
+    call apply_mask
 
 add_format_info:
-    mov $0x77c4, %esi
+    movzb best_mask(%ebp), %eax
+    movzw format_info(,%eax, 2), %esi   # format = format_info[mask]
     call write_format_info
     movb $0x81, bitmap+177*(177-8)+8    # place dark module
 add_version_info:
@@ -790,6 +889,196 @@ write_version_info_2_x:
     jne write_version_info_2_y  # y != 6
     ret
 
+    # Input:
+    # mask(ebp): mask
+    # Local:
+    # esi: j (x)
+    # edi: i (y)
+    # ebx: i*j
+    # ecx: v
+apply_mask:
+    movl $bitmap, apply_mask_p(%ebp)    # p = bitmap
+    xor %edi, %edi      # i = 0
+apply_mask_i:
+    xor %esi, %esi      # j = 0
+    mov %edi, apply_mask_i_plus_j(%ebp) # i+j = i
+    xor %ebx, %ebx      # i*j = 0
+apply_mask_j:
+    mov apply_mask_p(%ebp), %eax
+    mov (%eax), %cl
+    test %cl, %cl
+    js apply_mask_inc
+    movzb mask(%ebp), %eax
+    jmp *apply_mask_jump_table(,%eax, 4)
+apply_mask_jump_table:
+    .long apply_mask_0
+    .long apply_mask_1
+    .long apply_mask_2
+    .long apply_mask_3
+    .long apply_mask_4
+    .long apply_mask_5
+    .long apply_mask_6
+    .long apply_mask_7
+apply_mask_0:
+    mov apply_mask_i_plus_j(%ebp), %ecx # v = i+j
+    jmp apply_mask_v_mod_2_eql_0
+apply_mask_1:
+    mov %edi, %ecx  # v = i
+    jmp apply_mask_v_mod_2_eql_0
+apply_mask_2:
+    mov %esi, %eax      # eax = j
+    jmp apply_mask_mod_3_eql_0
+apply_mask_3:
+    mov apply_mask_i_plus_j(%ebp), %eax # eax = i+j
+apply_mask_mod_3_eql_0:
+    xor %edx, %edx
+    mov $3, %ecx
+    div %ecx    # edx = eax % 3
+    test %edx, %edx
+    jmp apply_mask_zf
+apply_mask_4:
+    xor %edx, %edx
+    mov %esi, %eax
+    mov $3, %ecx
+    div %ecx        # eax = j / 3
+    mov %edi, %ecx
+    shrl %ecx       # v = i/2
+    add %eax, %ecx  # v += j/3
+    jmp apply_mask_v_mod_2_eql_0
+apply_mask_5:
+    xor %edx, %edx
+    mov %ebx, %eax
+    mov $3, %ecx
+    div %ecx        # edx = i*j % 3
+    mov %ebx, %ecx
+    and $1, %ecx
+    add %ecx, %edx
+apply_mask_zf:
+    setz %cl    # v = zero flag
+    jmp apply_mask_mask
+apply_mask_6:
+    xor %edx, %edx
+    mov %ebx, %eax
+    mov $3, %ecx
+    div %ecx        # edx = i*j % 3
+    lea (%edx, %ebx), %ecx  # v = (i*j) % 3 + i*j
+    jmp apply_mask_v_mod_2_eql_0
+apply_mask_7:
+    mov $3, %ecx
+    xor %edx, %edx
+    mov %ebx, %eax
+    div %ecx        # edx = i*j % 3
+    add apply_mask_i_plus_j(%ebp), %edx
+    mov %edx, %ecx  # v = i*j % 3 + i+j
+apply_mask_v_mod_2_eql_0:
+    not %ecx
+    and $1, %ecx    # v = v % 2 == 0
+apply_mask_mask:
+    mov apply_mask_p(%ebp), %eax
+    xor (%eax), %cl
+    mov %cl, (%eax)
+apply_mask_inc:
+    incl apply_mask_p(%ebp) # p++
+    incl apply_mask_i_plus_j(%ebp)  # i+j += 1
+    add %edi, %ebx      # i*j += i
+    inc %esi            # j++
+    cmp $177, %esi
+    jne apply_mask_j
+    inc %edi            # i++
+    cmp $177, %edi
+    jne apply_mask_i
+    ret
+
+    # Input:
+    # eax: stride
+    # ecx: *bitmap
+    # Local:
+    # (esp): stride
+    # ebx: run_length_idx
+    # eax: prev
+    # edx: count
+    # ecx: *bitmap
+    # esi: i
+compute_run_length:
+    push %ebx
+    push %eax
+
+    xor %ebx, %ebx      # run_lenght_idx = 0
+    xor %eax, %eax      # prev = 0
+    xor %edx, %edx      # count = 0
+    mov $177, %esi      # i = 177
+compute_run_length_loop:
+    xor (%ecx), %al
+    and $1, %al
+    jz compute_run_length_countpp # ((*bitmap ^ prev) & 1) == 0
+    mov %dl, run_length(%ebx)   # run_length[run_length_idx] = count
+    inc %ebx            # run_length_idx++
+    mov $1, %edx        # count = 1
+    jmp compute_run_length_inc
+compute_run_length_countpp:
+    inc %edx            # count++
+compute_run_length_inc:
+    mov (%ecx), %al     # prev = *bitmap
+    add (%esp), %ecx    # bitmap += stride
+    dec %esi            # i--
+    jnz compute_run_length_loop # i != 0
+    mov %dl, run_length(%ebx)   # run_length[run_length_idx] = count
+    inc %ebx            # run_length_idx++
+    mov %ebx, run_length_len    #run_length_len = run_length_idx
+
+    pop %eax
+    pop %ebx
+    ret
+
+    # ebx: score
+    # eax: run_length_len
+    # edx: i
+    # Preserves: edi
+compute_n1n3:
+    push %edi
+    xor %edx, %edx      # i = 0
+    mov run_length_len, %eax
+compute_n1n3_loop:
+    cmp %eax, %edx
+    je compute_n1n3_ret # i == run_length_len
+    movzb run_length(%edx), %ecx    # ecx = run_length[i]
+    lea -2(%ebx, %ecx), %esi    # esi = score + run_length[i] - 2
+    cmp $5, %cl
+    cmovae %esi, %ebx   # score = run_length[i] >= 5 ? score + run_length[i] - 2 : score
+    test $1, %dl
+    jz compute_n1n3_inc # (i & 1) == 0
+    lea 4(%edx), %esi   # esi = i + 4
+    cmp %eax, %esi
+    jae compute_n1n3_inc    # i+4 >= run_lenght_len
+    cmp run_length+1(%ebx), %cl
+    jne compute_n1n3_inc    # run_length[i+1] != run_length[i]
+    movzb run_length+2(%ebx), %edi  # esi = run_length[i+2]
+    lea (%ecx, %ecx, 2), %edi   # edi = run_length[i] * 3
+    cmp %esi, %edi
+    jne compute_n1n3_inc    # run_length[i+2] != 3 * run_length[i]
+    cmp run_length+3(%edx), %cl
+    jne compute_n1n3_inc    # run_length[i+3] != run_length[i]
+    cmp run_length+4(%edx), %cl
+    jne compute_n1n3_inc    # run_length[i+3] != run_length[i]
+    movzb run_length-1(%ebx), %edi  # edi = run_length[i-1]
+    sal $2, %ecx            # ecx <<= 2
+    cmp %ecx, %esi
+    je compute_n1n3_add40   # run_length[i-1] == 4 * run_length[i]
+    lea 5(%edx), %esi   # esi = i + 5
+    cmp %eax, %esi
+    jae compute_n1n3_inc    # i + 5 >= run_length_len
+    movzb run_length+5(%edx), %esi
+    cmp %ecx, %esi
+    jne compute_n1n3_inc    # 4 * run_length[i] != run_length[i+5]
+compute_n1n3_add40:
+    add $40, %ebx       # score += 40
+compute_n1n3_inc:
+    inc %edx            # i++
+    jmp compute_n1n3_loop
+compute_n1n3_ret:
+    pop %edi
+    ret
+
     # eax: bits, edx: number of bits
     # byte_ptr(ebp): byte ptr
     # bit_position(ebp): bit position
@@ -1040,6 +1329,9 @@ alignment_pattern:
     .byte 0x81, 0x80, 0x81, 0x80, 0x81
     .byte 0x81, 0x80, 0x80, 0x80, 0x81
     .byte 0x81, 0x81, 0x81, 0x81, 0x81
+
+format_info:
+    .short 0x77c4, 0x72f3, 0x7daa, 0x789d, 0x662f, 0x6318, 0x6c41, 0x6976
 
 generator:
     .byte 0xb4,0xc0,0x28,0xee,0xd8,0xfb,0x25,0x9c,0x82,0xe0,0xc1,0xe2,0xad,0x2a,0x7d,0xde,0x60,0xef,0x56,0x6e,0x30,0x32,0xb6,0xb3,0x1f,0xd8,0x98,0x91,0xad,0x29
