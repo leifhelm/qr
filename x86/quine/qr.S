@@ -3,12 +3,30 @@
 
     .struct 0
 block_data:
-    .struct . + 4
+    .skip 4
 block_data_len:
-    .struct . + 4
+    .skip 4
 block_ecc:
-    .struct . + 30
+    .skip 30
 sizeof_block:
+
+# Global stack frame (scratch space)
+    .struct 0
+file:
+    .skip 4
+byte_ptr:
+    .skip 4
+adler32_a:
+    .skip 4
+adler32_b:
+    .skip 4
+# Byte aligned variables
+output_type:
+    .skip 1
+bit_position:
+    .skip 1
+    .align 4
+sizeof_scratch:
 
 
 .section .text
@@ -18,6 +36,7 @@ _start:
     mov (%esp), %edi            # edi = argc
     mov $1, %edx                # i = 1
     lea (%esp, %edx, 4), %ecx   # ecx = argv
+    mov $scratch, %ebp          # set up scratch space
 //    push %esi                   # save esi
 args_loop:
     cmp %edi, %edx
@@ -31,18 +50,18 @@ args_loop:
     call str_cmp
     test %eax, %eax
     jz args_after_png           # argv[i] != flag_png
-    movb $1, output_type        # output_type = 1
+    movb $1, output_type(%ebp)  # output_type = 1
     jmp args_inc
 args_after_png:
-    mov %ebx, file              # file = argv[i]
+    mov %ebx, file(%ebp)        # file = argv[i]
 args_inc:
     inc %edx
     jmp args_loop
 args_complete:
-    cmpl $0, file
-    je encode_self
+    cmpl $0, file(%ebp)
+    je encode_self              # file == 0
     mov $SYS_open, %eax
-    mov file, %ebx
+    mov file(%ebp), %ebx
     mov $O_RDONLY, %ecx
     int $0x80                   # fd = open(file, O_RDONLY)
     test %eax, %eax
@@ -343,7 +362,7 @@ add_version_info:
     mov $0x28c69, %ebx
     call write_version_info
 
-    cmpb $0, output_type
+    cmpb $0, output_type(%ebp)
     jne png             # output_type != 0
 
     # esi: x, edi: y
@@ -391,9 +410,9 @@ png:
     mov $png_idat_len, %ecx
     rep movsb                   # move precomputed header
 
-    sub $1, %edi # compensate for incomplete byte
-    mov %edi, -4(%ebp)
-    movb $7, -8(%ebp)           # bit position = 7
+    dec %edi                    # compensate for incomplete byte
+    mov %edi, byte_ptr(%ebp)
+    movb $7, bit_position(%ebp) # bit position = 7
 
     # esi: x, edi: y
     xor %edi, %edi
@@ -431,8 +450,8 @@ png_bitstring_put:
     call bitstring_concat
 
 png_compute_adler32:
-    movl $1, -12(%ebp)      # a = 1
-    movl $0, -16(%ebp)      # b = 1
+    movl $1, adler32_a(%ebp)    # a = 1
+    movl $0, adler32_b(%ebp)    # b = 1
     call png_adler32_quiet_full
     xor %edi, %edi
 png_compute_adler32_y:
@@ -457,7 +476,7 @@ png_compute_adler32_call:
     call update_adler32
     inc %esi                # x++
     cmp $177, %esi
-    jne png_compute_adler32_x # x != 177
+    jne png_compute_adler32_x   # x != 177
     call png_adler32_quiet
     dec %ecx
     jnz png_compute_adler32_repeat
@@ -467,13 +486,13 @@ png_compute_adler32_call:
 
     call png_adler32_quiet_full
 png_compute_adler32_finish:
-    mov -12(%ebp), %eax     # eax = a
-    mov -16(%ebp), %ebx     # ebx = b
+    mov adler32_a(%ebp), %eax   # eax = a
+    mov adler32_b(%ebp), %ebx   # ebx = b
     sal $16, %ebx
     or %eax, %ebx
     bswap %ebx              # ebx = adler in big endian
-    mov -4(%ebp), %edi      # edi = chunk ptr
-    cmpb $1, -8(%ebp)
+    mov byte_ptr(%ebp), %edi    # edi = byte ptr
+    cmpb $1, bit_position(%ebp)
     sbb $-1, %edi           # if (bit position != 0) edi = edi + 1
     mov %ebx, (%edi)        # write Adler32 sum
     add $4, %edi            # edi += 4 i.e. move edi after Adler32 sum
@@ -772,8 +791,8 @@ write_version_info_2_x:
     ret
 
     # eax: bits, edx: number of bits
-    # -4(ebp): byte ptr
-    # -8(ebp): bit position
+    # byte_ptr(ebp): byte ptr
+    # bit_position(ebp): bit position
     # clobers: eax, edx
 bitstring_put:
     push %ebx
@@ -787,21 +806,21 @@ bitstring_put_loop:
     sar $1, %eax            # bits >>= 1
     and $1, %esi            # esi & 0x01
 bitset:
-    mov -4(%ebp), %ebx
+    mov byte_ptr(%ebp), %ebx
     mov (%ebx), %bl     # bl = *byte ptr
-    mov -8(%ebp), %ecx  # ecx: bit position
+    mov bit_position(%ebp), %ecx    # ecx: bit position
     sal %cl, %esi
     btr %ecx, %ebx
     or %esi, %ebx
-    mov -4(%ebp), %esi
+    mov byte_ptr(%ebp), %esi
     mov %bl, (%esi)     # *byte ptr = *byte ptr with bit %cl equal %esi
     cmp $7, %cl
     jne bitstring_put_default_inc
-    incl -4(%ebp)       # byte ptr++
-    movl $0, -8(%ebp)   # bit position = 0
+    incl byte_ptr(%ebp) # byte ptr++
+    movl $0, bit_position(%ebp) # bit position = 0
     jmp bitstring_put_loop
 bitstring_put_default_inc:
-    incl -8(%ebp)       # bit position++
+    incl bit_position(%ebp) # bit position++
     jmp bitstring_put_loop
 bitstring_put_ret:
     pop %ecx
@@ -825,23 +844,23 @@ bitstring_concat_last:
     call bitstring_put
     ret
 
-    #  dl: new byte
-    # -12(ebp): a
-    # -16(ebp): b
+    # dl: new byte
+    # adler32_a(ebp): a
+    # adler32_b(ebp): b
 update_adler32:
     push %ecx
     movzb %dl, %edx
     mov $65521, %ecx
-    mov -12(%ebp), %eax     # eax = a
+    mov adler32_a(%ebp), %eax   # eax = a
     add %edx, %eax
     xor %edx, %edx
     div %ecx
-    mov %edx, -12(%ebp)     # a = (a + new byte) % 65521
-    mov -16(%ebp), %ebx     # ebx = b
+    mov %edx, adler32_a(%ebp)   # a = (a + new byte) % 65521
+    mov adler32_b(%ebp), %ebx   # ebx = b
     lea (%edx,%ebx), %eax   # eax = a + b
     xor %edx, %edx
     div %ecx
-    mov %edx, -16(%ebp)
+    mov %edx, adler32_b(%ebp)   # b = (a + b) % 65521
     pop %ecx
     ret
 
@@ -1026,6 +1045,8 @@ generator:
     .byte 0xb4,0xc0,0x28,0xee,0xd8,0xfb,0x25,0x9c,0x82,0xe0,0xc1,0xe2,0xad,0x2a,0x7d,0xde,0x60,0xef,0x56,0x6e,0x30,0x32,0xb6,0xb3,0x1f,0xd8,0x98,0x91,0xad,0x29
 
 .section .bss
+scratch:
+    .skip sizeof_scratch
 alpha:
     .skip 256
 aindex:
@@ -1052,11 +1073,6 @@ run_length:
 bitstream:
     .skip 2956
 bitstream_end:
-
-file:
-    .skip 4
-output_type:
-    .skip 1
 
 input:
 codewords:
