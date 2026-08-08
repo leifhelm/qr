@@ -78,15 +78,24 @@ args_complete:
     js print_cannot_open_file   # fd < 0
 
     mov %eax, %ebx
-    mov $SYS_read, %eax
+    mov $2953, %edx             # count = 2953
     mov $input, %ecx
-    mov $2953, %edx
+    mov %ecx, %edi              # data
+args_read_loop:
+    mov $SYS_read, %eax
     int $0x80                   # read(fd, data, 2953)
     test %eax, %eax
-    jle print_cannot_read_file  # ret <= 0
-    mov %ecx, %edi              # data
-    lea (%ecx, %eax), %esi      # data end = data + length
+    jl print_cannot_read_file   # ret < 0
+    jnz args_read_again
+    mov %ecx, %esi              # data end
+    cmp %edi, %esi
+    je print_empty_file         # data == data end
     jmp encode_qr_code
+args_read_again:
+    sub %eax, %edx              # count -= bytes read
+    add %eax, %ecx              # data += bytes read
+    jmp args_read_loop
+
 encode_self:
     mov $0x7f000, %edi
 
@@ -1193,6 +1202,7 @@ print_cannot_open_file:
     mov $cannot_open_file, %ecx
     mov $cannot_open_file_len, %edx
     call write_stderr       # write to stderr
+exit1:
     mov $1, %ebx
     jmp exit                # exit(1)
 
@@ -1200,8 +1210,13 @@ print_cannot_read_file:
     mov $cannot_read_file, %ecx
     mov $cannot_read_file_len, %edx
     call write_stderr       # write to stderr
-    mov $1, %ebx
-    jmp exit                # exit(1)
+    jmp exit1
+
+print_empty_file:
+    mov $empty_file, %ecx
+    mov $empty_file_len, %edx
+    call write_stderr       # write to stderr
+    jmp exit1
 
 print_help:
     mov $help, %ecx
@@ -1275,6 +1290,9 @@ cannot_open_file:
 cannot_read_file:
     .ascii "Cannot read file.\n"
     cannot_read_file_len = . - cannot_read_file
+empty_file:
+    .ascii "Empty file.\n"
+    empty_file_len = . - empty_file
 
 flag_help:
     .asciz "--help"
