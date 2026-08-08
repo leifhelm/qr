@@ -3,7 +3,7 @@
 <picture>
  <source media="(prefers-color-scheme: dark)" srcset="preview/dark.png">
  <source media="(prefers-color-scheme: light)" srcset="preview/light.png">
- <img alt="QR Code" src="preview/light.png" style="image-rendering:pixelated">
+ <img alt="QR Code" src="preview/light.png">
 </picture>
 
 This QR code is an x86 QR code encoder which is capable of encoding itself.
