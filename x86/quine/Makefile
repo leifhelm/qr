@@ -13,7 +13,7 @@ LD_FLAGS ?= --static --no-dynamic-linker -n -T ../common/script.ld
 OBJCOPY ?= objcopy
 
 .PHONY: all
-all: preview/light.svg preview/dark.svg
+all: preview/light.png preview/dark.png
 
 build:
 	mkdir -p build
@@ -30,15 +30,16 @@ build/qr.min: build/qr
 preview:
 	mkdir -p preview
 
-preview/light.svg: build/qr.min | preview
-	qrencode -8 -l L -t SVG --foreground=000000 --background=00000000 -o $@ < $<
+preview/light.png: build/qr.min | preview
+	qrencode -8 -l L -t PNG -s 1 --foreground=000000 --background=00000000 -o $@ < $<
 
-preview/dark.svg: build/qr.min | preview
-	qrencode -8 -l L -t SVG --foreground=E6E6E6 --background=00000000 -o $@ < $<
+preview/dark.png: build/qr.min | preview
+	qrencode -8 -l L -t PNG -s 1 --foreground=E6E6E6 --background=00000000 -o $@ < $<
 
 
 .PHONY: clean
 clean:
 	rm -rf build
+	rm -rf preview
 
 # end
